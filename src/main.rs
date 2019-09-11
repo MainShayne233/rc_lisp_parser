@@ -10,7 +10,7 @@
 #[derive(Debug, Clone, PartialEq)]
 enum Node {
     Integer(i64),
-    Identifier(String)
+    Function(String)
 }
 
 fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str> where P: Fn(char) -> bool, R: Fn(String) -> T {
@@ -40,8 +40,16 @@ fn new_integer(value: String) -> Node {
     Node::Integer(value.parse::<i64>().unwrap())
 }
 
-fn new_identifier(value: String) -> Node {
-    Node::Identifier(value)
+fn new_function(value: String) -> Node {
+    Node::Function(value)
+}
+
+fn is_operator(value: char) -> bool {
+    value == '+' || value == '-' || value == '*' || value == '/'
+}
+
+fn is_function_char(value: char) -> bool {
+    value.is_alphabetic() || is_operator(value)
 }
 
 
@@ -55,8 +63,9 @@ fn test_parse_integer() {
 }
 
 #[test]
-fn test_parse_identifier() {
-    let parse_identifier = some_chars(char::is_alphabetic, new_identifier);
-    assert_eq!(Ok(("", Node::Identifier(String::from("apple")))), parse_identifier("apple"));
-    assert_eq!(Err("123"), parse_identifier("123"));
+fn test_parse_function() {
+    let parse_function = some_chars(is_function_char, new_function);
+    assert_eq!(Ok(("", Node::Function(String::from("apple")))), parse_function("apple"));
+    assert_eq!(Ok(("", Node::Function(String::from("+")))), parse_function("+"));
+    assert_eq!(Err("123"), parse_function("123"));
 }
