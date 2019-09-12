@@ -8,11 +8,50 @@
 //////////////////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Clone, PartialEq)]
-enum Node {
+enum Expression {
     Integer(i64),
-    Identifier(String),
-    Operator(char),
+    FunctionName(String),
     Symbol(char),
+    FunctionCall(Box<(Expression, Vec<Expression>)>),
+}
+
+// fn main() {
+//     let parse_expression = or(vec![parse_integer, parse_function]);
+//     let parse_function = match_pattern(vec![
+//         literal(left_paren),
+//         any_amount(whitespace()),
+//         or(vec![identifier, operator]),
+//         any_amount(whitespace()),
+//         many(
+//             whitespace_delimited(expression)
+//         )
+//        any_amount(whitespace()),
+//        literal(right_paren),
+//     ]);
+// }
+
+#[derive(Debug, Clone, PartialEq)]
+enum OrResult<LT, RT, E> {
+    LHS(LT),
+    RHS(RT),
+    Err(E),
+}
+
+fn or<LT, RT, L, R>(
+    lhs_matcher: L,
+    rhs_matcher: R,
+) -> impl Fn(&str) -> OrResult<(&str, LT), (&str, RT), &str>
+where
+    L: Fn(&str) -> Result<(&str, LT), &str>,
+    R: Fn(&str) -> Result<(&str, RT), &str>,
+{
+    move |input| match lhs_matcher(input) {
+        Ok((rest, node)) => OrResult::LHS((rest, node)),
+        _ => match rhs_matcher(input) {
+            Ok((rest, node)) => OrResult::RHS((rest, node)),
+            _ => OrResult::Err(input),
+        },
+    }
 }
 
 fn match_some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
@@ -53,20 +92,22 @@ where
     }
 }
 
-fn new_integer(value: String) -> Node {
-    Node::Integer(value.parse::<i64>().unwrap())
+fn new_integer(value: String) -> Expression {
+    Expression::Integer(value.parse::<i64>().unwrap())
 }
 
-fn new_identifier(value: String) -> Node {
-    Node::Identifier(value)
+fn new_identifier(value: String) -> Expression {
+    Expression::FunctionName(value)
 }
 
-fn new_operator(value: char) -> Node {
-    Node::Operator(value)
+fn new_operator(value: char) -> Expression {
+    let mut string = String::new();
+    string.push(value);
+    Expression::FunctionName(string)
 }
 
-fn new_symbol(value: char) -> Node {
-    Node::Symbol(value)
+fn new_symbol(value: char) -> Expression {
+    Expression::Symbol(value)
 }
 
 fn is_operator(value: char) -> bool {
@@ -80,9 +121,9 @@ fn is_symbol(value: char) -> bool {
 #[test]
 fn test_parse_integer() {
     let parse_integer = match_some_chars(char::is_numeric, new_integer);
-    assert_eq!(Ok(("", Node::Integer(1))), parse_integer("1"));
-    assert_eq!(Ok(("", Node::Integer(2))), parse_integer("2"));
-    assert_eq!(Ok(("", Node::Integer(123))), parse_integer("123"));
+    assert_eq!(Ok(("", Expression::Integer(1))), parse_integer("1"));
+    assert_eq!(Ok(("", Expression::Integer(2))), parse_integer("2"));
+    assert_eq!(Ok(("", Expression::Integer(123))), parse_integer("123"));
     assert_eq!(Err("apple"), parse_integer("apple"));
 }
 
@@ -90,7 +131,7 @@ fn test_parse_integer() {
 fn test_parse_identifier() {
     let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
     assert_eq!(
-        Ok(("", Node::Identifier(String::from("apple")))),
+        Ok(("", Expression::FunctionName(String::from("apple")))),
         parse_identifier("apple")
     );
     assert_eq!(Err("+cool"), parse_identifier("+cool"));
@@ -100,16 +141,39 @@ fn test_parse_identifier() {
 #[test]
 fn test_parse_operator() {
     let parse_operator = match_single_char(is_operator, new_operator);
-    assert_eq!(Ok(("", Node::Operator('+'))), parse_operator("+"));
-    assert_eq!(Ok(("", Node::Operator('-'))), parse_operator("-"));
-    assert_eq!(Ok(("cool", Node::Operator('+'))), parse_operator("+cool"));
+    assert_eq!(
+        Ok(("", Expression::FunctionName(String::from("+")))),
+        parse_operator("+")
+    );
+    assert_eq!(
+        Ok(("", Expression::FunctionName(String::from("-")))),
+        parse_operator("-")
+    );
+    assert_eq!(
+        Ok(("cool", Expression::FunctionName(String::from("+")))),
+        parse_operator("+cool")
+    );
 }
 
 #[test]
 fn test_parse_symbol() {
     let parse_symbol = match_single_char(is_symbol, new_symbol);
-    assert_eq!(Ok(("", Node::Symbol('('))), parse_symbol("("));
-    assert_eq!(Ok(("", Node::Symbol(')'))), parse_symbol(")"));
+    assert_eq!(Ok(("", Expression::Symbol('('))), parse_symbol("("));
+    assert_eq!(Ok(("", Expression::Symbol(')'))), parse_symbol(")"));
     assert_eq!(Err("+"), parse_symbol("+"));
 }
 
+#[test]
+fn test_parse_function_name() {
+    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
+    let parse_operator = match_single_char(is_operator, new_operator);
+    let parse_either = or(parse_identifier, parse_operator);
+    assert_eq!(
+        OrResult::LHS(("", Expression::FunctionName(String::from("hello")))),
+        parse_either("hello")
+    );
+    assert_eq!(
+        OrResult::RHS(("", Expression::FunctionName(String::from("+")))),
+        parse_either("+")
+    );
+}
