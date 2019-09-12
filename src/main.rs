@@ -10,7 +10,8 @@
 #[derive(Debug, Clone, PartialEq)]
 enum Node {
     Integer(i64),
-    Function(String),
+    Identifier(String),
+    Operator(char),
 }
 
 fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
@@ -40,20 +41,31 @@ where
     }
 }
 
+fn single_char<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
+where
+    P: Fn(char) -> bool,
+    R: Fn(char) -> T,
+{
+    move |input| match input.chars().next() {
+        Some(next) if predicate(next) => Ok((&input[1..], reducer(next))),
+        _ => return Err(input),
+    }
+}
+
 fn new_integer(value: String) -> Node {
     Node::Integer(value.parse::<i64>().unwrap())
 }
 
-fn new_function(value: String) -> Node {
-    Node::Function(value)
+fn new_identifier(value: String) -> Node {
+    Node::Identifier(value)
+}
+
+fn new_operator(value: char) -> Node {
+    Node::Operator(value)
 }
 
 fn is_operator(value: char) -> bool {
     value == '+' || value == '-' || value == '*' || value == '/'
-}
-
-fn is_function_char(value: char) -> bool {
-    value.is_alphabetic() || is_operator(value)
 }
 
 #[test]
@@ -66,15 +78,20 @@ fn test_parse_integer() {
 }
 
 #[test]
-fn test_parse_function() {
-    let parse_function = some_chars(is_function_char, new_function);
+fn test_parse_identifier() {
+    let parse_identifier = some_chars(char::is_alphabetic, new_identifier);
     assert_eq!(
-        Ok(("", Node::Function(String::from("apple")))),
-        parse_function("apple")
+        Ok(("", Node::Identifier(String::from("apple")))),
+        parse_identifier("apple")
     );
-    assert_eq!(
-        Ok(("", Node::Function(String::from("+")))),
-        parse_function("+")
-    );
-    assert_eq!(Err("123"), parse_function("123"));
+    assert_eq!(Err("+cool"), parse_identifier("+cool"));
+    assert_eq!(Err("123"), parse_identifier("123"));
+}
+
+#[test]
+fn test_parse_operator() {
+    let parse_operator = single_char(is_operator, new_operator);
+    assert_eq!(Ok(("", Node::Operator('+'))), parse_operator("+"));
+    assert_eq!(Ok(("", Node::Operator('-'))), parse_operator("-"));
+    assert_eq!(Ok(("cool", Node::Operator('+'))), parse_operator("+cool"));
 }
