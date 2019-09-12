@@ -13,6 +13,7 @@ enum Expression {
     FunctionName(String),
     Symbol(char),
     FunctionCall(Box<(Expression, Vec<Expression>)>),
+    Whitespace
 }
 
 // fn main() {
@@ -51,6 +52,23 @@ where
             Ok((rest, node)) => OrResult::RHS((rest, node)),
             _ => OrResult::Err(input),
         },
+    }
+}
+
+fn followed_by<LT, RT, L, R>(
+    lhs_matcher: L,
+    rhs_matcher: R,
+) -> impl Fn(&str) -> Result<((&str, (LT, RT))), &str>
+where
+    L: Fn(&str) -> Result<(&str, LT), &str>,
+    R: Fn(&str) -> Result<(&str, RT), &str>,
+{
+    move |input| match lhs_matcher(input) {
+        Ok((rest, lhs_node)) => match rhs_matcher(rest) {
+            Ok((rest, rhs_node)) => Ok((rest, (lhs_node, rhs_node))),
+            _ => Err(input),
+        },
+        _ => Err(input),
     }
 }
 
@@ -108,6 +126,10 @@ fn new_operator(value: char) -> Expression {
 
 fn new_symbol(value: char) -> Expression {
     Expression::Symbol(value)
+}
+
+fn new_whitespace(_: String) -> Expression {
+    Expression::Whitespace
 }
 
 fn is_operator(value: char) -> bool {
@@ -175,5 +197,14 @@ fn test_parse_function_name() {
     assert_eq!(
         OrResult::RHS(("", Expression::FunctionName(String::from("+")))),
         parse_either("+")
+    );
+}
+
+#[test]
+fn test_parse_whitespace() {
+    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
+    assert_eq!(
+        Ok(("", Expression::Whitespace)),
+        parse_whitespace(" ")
     );
 }
