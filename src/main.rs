@@ -10,29 +10,33 @@
 #[derive(Debug, Clone, PartialEq)]
 enum Node {
     Integer(i64),
-    Function(String)
+    Function(String),
 }
 
-fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str> where P: Fn(char) -> bool, R: Fn(String) -> T {
+fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
+where
+    P: Fn(char) -> bool,
+    R: Fn(String) -> T,
+{
     move |input| {
-      let mut matched = String::new();
-      let mut chars = input.chars();
+        let mut matched = String::new();
+        let mut chars = input.chars();
 
-      match chars.next() {
-          Some(next) if predicate(next) => matched.push(next),
-          _ => return Err(input),
-      }
+        match chars.next() {
+            Some(next) if predicate(next) => matched.push(next),
+            _ => return Err(input),
+        }
 
-      while let Some(next) = chars.next() {
-          if predicate(next) {
-              matched.push(next);
-          } else {
-              break;
-          }
-      }
+        while let Some(next) = chars.next() {
+            if predicate(next) {
+                matched.push(next);
+            } else {
+                break;
+            }
+        }
 
-      let next_index = matched.len();
-      Ok((&input[next_index..], reducer(matched)))
+        let next_index = matched.len();
+        Ok((&input[next_index..], reducer(matched)))
     }
 }
 
@@ -52,7 +56,6 @@ fn is_function_char(value: char) -> bool {
     value.is_alphabetic() || is_operator(value)
 }
 
-
 #[test]
 fn test_parse_integer() {
     let parse_integer = some_chars(char::is_numeric, new_integer);
@@ -65,7 +68,13 @@ fn test_parse_integer() {
 #[test]
 fn test_parse_function() {
     let parse_function = some_chars(is_function_char, new_function);
-    assert_eq!(Ok(("", Node::Function(String::from("apple")))), parse_function("apple"));
-    assert_eq!(Ok(("", Node::Function(String::from("+")))), parse_function("+"));
+    assert_eq!(
+        Ok(("", Node::Function(String::from("apple")))),
+        parse_function("apple")
+    );
+    assert_eq!(
+        Ok(("", Node::Function(String::from("+")))),
+        parse_function("+")
+    );
     assert_eq!(Err("123"), parse_function("123"));
 }
