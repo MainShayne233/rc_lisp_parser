@@ -12,6 +12,16 @@ enum Node {
     Integer(i64),
     Identifier(String),
     Operator(char),
+    Symbol(char),
+}
+
+impl Node {
+    pub fn constructor<F, T>(constructor: F) -> impl Fn(T) -> Self
+    where
+        F: Fn(T) -> Self,
+    {
+        move |value| (constructor)(value)
+    }
 }
 
 fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
@@ -64,8 +74,16 @@ fn new_operator(value: char) -> Node {
     Node::Operator(value)
 }
 
+fn new_symbol(value: char) -> Node {
+    Node::Symbol(value)
+}
+
 fn is_operator(value: char) -> bool {
     value == '+' || value == '-' || value == '*' || value == '/'
+}
+
+fn is_symbol(value: char) -> bool {
+    value == ')' || value == '('
 }
 
 #[test]
@@ -95,3 +113,12 @@ fn test_parse_operator() {
     assert_eq!(Ok(("", Node::Operator('-'))), parse_operator("-"));
     assert_eq!(Ok(("cool", Node::Operator('+'))), parse_operator("+cool"));
 }
+
+#[test]
+fn test_parse_symbol() {
+    let parse_symbol = single_char(is_symbol, new_symbol);
+    assert_eq!(Ok(("", Node::Symbol('('))), parse_symbol("("));
+    assert_eq!(Ok(("", Node::Symbol(')'))), parse_symbol(")"));
+    assert_eq!(Err("+"), parse_symbol("+"));
+}
+
