@@ -15,16 +15,7 @@ enum Node {
     Symbol(char),
 }
 
-impl Node {
-    pub fn constructor<F, T>(constructor: F) -> impl Fn(T) -> Self
-    where
-        F: Fn(T) -> Self,
-    {
-        move |value| (constructor)(value)
-    }
-}
-
-fn some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
+fn match_some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
 where
     P: Fn(char) -> bool,
     R: Fn(String) -> T,
@@ -51,7 +42,7 @@ where
     }
 }
 
-fn single_char<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
+fn match_single_char<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
 where
     P: Fn(char) -> bool,
     R: Fn(char) -> T,
@@ -88,7 +79,7 @@ fn is_symbol(value: char) -> bool {
 
 #[test]
 fn test_parse_integer() {
-    let parse_integer = some_chars(char::is_numeric, new_integer);
+    let parse_integer = match_some_chars(char::is_numeric, new_integer);
     assert_eq!(Ok(("", Node::Integer(1))), parse_integer("1"));
     assert_eq!(Ok(("", Node::Integer(2))), parse_integer("2"));
     assert_eq!(Ok(("", Node::Integer(123))), parse_integer("123"));
@@ -97,7 +88,7 @@ fn test_parse_integer() {
 
 #[test]
 fn test_parse_identifier() {
-    let parse_identifier = some_chars(char::is_alphabetic, new_identifier);
+    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
     assert_eq!(
         Ok(("", Node::Identifier(String::from("apple")))),
         parse_identifier("apple")
@@ -108,7 +99,7 @@ fn test_parse_identifier() {
 
 #[test]
 fn test_parse_operator() {
-    let parse_operator = single_char(is_operator, new_operator);
+    let parse_operator = match_single_char(is_operator, new_operator);
     assert_eq!(Ok(("", Node::Operator('+'))), parse_operator("+"));
     assert_eq!(Ok(("", Node::Operator('-'))), parse_operator("-"));
     assert_eq!(Ok(("cool", Node::Operator('+'))), parse_operator("+cool"));
@@ -116,7 +107,7 @@ fn test_parse_operator() {
 
 #[test]
 fn test_parse_symbol() {
-    let parse_symbol = single_char(is_symbol, new_symbol);
+    let parse_symbol = match_single_char(is_symbol, new_symbol);
     assert_eq!(Ok(("", Node::Symbol('('))), parse_symbol("("));
     assert_eq!(Ok(("", Node::Symbol(')'))), parse_symbol(")"));
     assert_eq!(Err("+"), parse_symbol("+"));
