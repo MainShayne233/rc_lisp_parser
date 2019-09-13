@@ -13,7 +13,8 @@ enum Expression {
     FunctionName(String),
     Symbol(char),
     FunctionCall(Box<(Expression, Vec<Expression>)>),
-    Whitespace
+    Whitespace,
+    Pair(Box<(Expression, Expression)>),
 }
 
 // fn main() {
@@ -31,13 +32,6 @@ enum Expression {
 //     ]);
 // }
 
-#[derive(Debug, Clone, PartialEq)]
-enum OrResult<LT, RT, E> {
-    LHS(LT),
-    RHS(RT),
-    Err(E),
-}
-
 fn or<L, R>(lhs_matcher: L, rhs_matcher: R) -> impl Fn(&str) -> Result<(&str, Expression), &str>
 where
     L: Fn(&str) -> Result<(&str, Expression), &str>,
@@ -52,22 +46,44 @@ where
     }
 }
 
-fn followed_by<LT, RT, L, R>(
+fn and_then<L, R>(
     lhs_matcher: L,
     rhs_matcher: R,
-) -> impl Fn(&str) -> Result<((&str, (LT, RT))), &str>
+) -> impl Fn(&str) -> Result<(&str, Expression), &str>
 where
-    L: Fn(&str) -> Result<(&str, LT), &str>,
-    R: Fn(&str) -> Result<(&str, RT), &str>,
+    L: Fn(&str) -> Result<(&str, Expression), &str>,
+    R: Fn(&str) -> Result<(&str, Expression), &str>,
 {
     move |input| match lhs_matcher(input) {
-        Ok((rest, lhs_node)) => match rhs_matcher(rest) {
-            Ok((rest, rhs_node)) => Ok((rest, (lhs_node, rhs_node))),
+        Ok((rest, lhs_result)) => {
+            let next = move |next_matcher: Box<Fn(&str) -> Result<(&str, Expression), &str>>| {
+                match next_matcher(rest) {
+                    Ok((rest, rhs_result)) => {
+                        Ok((rest, Expression::Pair(Box::new((lhs_result, rhs_result)))))
+                    }
+                    _ => Err(input),
+                }
+            };
+            next(Box::new(|rest| rhs_matcher(rest)))
+        }
+        _ => match rhs_matcher(input) {
+            Ok((rest, node)) => Ok((rest, node)),
             _ => Err(input),
         },
-        _ => Err(input),
     }
 }
+
+// fn and_then<'a, P, F, A, B, NextP>(parser: P, f: F) -> impl Parser<'a, B>
+// where
+//     P: Parser<'a, A>,
+//     NextP: Parser<'a, B>,
+//     F: Fn(A) -> NextP,
+// {
+//     move |input| match parser.parse(input) {
+//         Ok((next_input, result)) => f(result).parse(next_input),
+//         Err(err) => Err(err),
+//     }
+// }
 
 fn match_some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
 where
@@ -198,10 +214,28 @@ fn test_parse_function_name() {
 }
 
 #[test]
+fn test_parse_symbol_then_identifier_then_whitespace() {
+    let parse_symbol = match_single_char(is_symbol, new_symbol);
+    let parse_ident = match_some_chars(char::is_alphabetic, new_identifier);
+    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
+    let parse_all = and_then(parse_symbol, and_then(parse_ident, parse_whitespace));
+    assert_eq!(
+        Ok((
+            "",
+            Expression::Pair(Box::new((
+                Expression::Symbol('('),
+                Expression::Pair(Box::new((
+                    Expression::FunctionName(String::from("hello")),
+                    Expression::Whitespace,
+                ))),
+            )))
+        )),
+        parse_all("(hello ")
+    );
+}
+
+#[test]
 fn test_parse_whitespace() {
     let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
-    assert_eq!(
-        Ok(("", Expression::Whitespace)),
-        parse_whitespace(" ")
-    );
+    assert_eq!(Ok(("", Expression::Whitespace)), parse_whitespace(" "));
 }
