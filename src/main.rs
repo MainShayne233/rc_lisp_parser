@@ -12,9 +12,10 @@ enum Expression {
     Integer(i64),
     FunctionName(String),
     Symbol(char),
-    FunctionCall(Box<(Expression, Vec<Expression>)>),
+//    FunctionCall(Box<(Expression, Vec<Expression>)>),
     Whitespace,
     Pair(Box<(Expression, Expression)>),
+    List(Box<Vec<Expression>>)
 }
 
 // fn main() {
@@ -73,17 +74,22 @@ where
     }
 }
 
-// fn and_then<'a, P, F, A, B, NextP>(parser: P, f: F) -> impl Parser<'a, B>
-// where
-//     P: Parser<'a, A>,
-//     NextP: Parser<'a, B>,
-//     F: Fn(A) -> NextP,
-// {
-//     move |input| match parser.parse(input) {
-//         Ok((next_input, result)) => f(result).parse(next_input),
-//         Err(err) => Err(err),
-//     }
-// }
+fn zero_to_many<L>(
+    matcher: L,
+) -> impl Fn(&str) -> Result<(&str, Expression), &str>
+where
+    L: Fn(&str) -> Result<(&str, Expression), &str>,
+{
+    move |input| {
+        let mut matches: Vec<Expression> = vec![];
+        let mut current = input;
+        while let Ok((rest, result)) = matcher(current) {
+            matches.push(result);
+            current = rest;
+        }
+        Ok((current, Expression::List(Box::new(matches))))
+    }
+}
 
 fn match_some_chars<T, P, R>(predicate: P, reducer: R) -> impl Fn(&str) -> Result<(&str, T), &str>
 where
@@ -238,4 +244,19 @@ fn test_parse_symbol_then_identifier_then_whitespace() {
 fn test_parse_whitespace() {
     let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
     assert_eq!(Ok(("", Expression::Whitespace)), parse_whitespace(" "));
+}
+
+#[test]
+fn test_parse_whitespace_delimited_integers() {
+    let parse_integer = match_some_chars(char::is_numeric, new_integer);
+    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
+    let parse_either = or(parse_integer, parse_whitespace);
+    let parse_integers = zero_to_many(parse_either);
+    assert_eq!(parse_integers("1 2 3"),Ok(("", Expression::List(Box::new(vec![
+        Expression::Integer(1),
+        Expression::Whitespace,
+        Expression::Integer(2),
+        Expression::Whitespace,
+        Expression::Integer(3),
+    ])))));
 }
