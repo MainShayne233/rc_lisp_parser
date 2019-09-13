@@ -74,7 +74,6 @@ where
     }
 }
 
-
 fn whitespace_delimited<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
 where
     L: Fn(&str) -> Result<(&str, Node), &str>,
@@ -276,11 +275,14 @@ where
 }
 
 fn expression() -> impl Fn(&str) -> Result<(&str, Node), &str> {
-    integer()
+    move |input| match left_paren()(input) {
+        Ok(_) => function_call()(input),
+        _ => integer()(input),
+    }
 }
 
 fn function_arguments() -> impl Fn(&str) -> Result<(&str, Node), &str> {
-     move |input| match whitespace_delimited(expression())(input) {
+    move |input| match whitespace_delimited(expression())(input) {
         Ok((rest, Node::List(box mut args))) => match expression()(rest) {
             Ok((rest, trailing_arg)) => {
                 args.push(trailing_arg);
