@@ -21,21 +21,6 @@ enum Node {
     List(Box<Vec<Node>>),
 }
 
-// fn main() {
-//     let parse_expression = or(vec![parse_integer, parse_function]);
-//     let parse_function = match_pattern(vec![
-//         literal(left_paren),
-//         any_amount(whitespace()),
-//         or(vec![identifier, operator]),
-//         any_amount(whitespace()),
-//         many(
-//             whitespace_delimited(expression)
-//         )
-//        any_amount(whitespace()),
-//        literal(right_paren),
-//     ]);
-// }
-
 fn or<L, R>(lhs_matcher: L, rhs_matcher: R) -> impl Fn(&str) -> Result<(&str, Node), &str>
 where
     L: Fn(&str) -> Result<(&str, Node), &str>,
