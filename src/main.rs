@@ -21,6 +21,17 @@ enum Node {
     List(Box<Vec<Node>>),
 }
 
+fn main() {
+    let program = "(first (list 1 (+ 2 3) 9))";
+    println!("Parsing: {}", program);
+    let parser = expression();
+    if let Ok(("", result)) = parser(program) {
+        println!("Result:\n{:#?}", result);
+    } else {
+        println!("Parse Failure");
+    }
+}
+
 fn or<L, R>(lhs_matcher: L, rhs_matcher: R) -> impl Fn(&str) -> Result<(&str, Node), &str>
 where
     L: Fn(&str) -> Result<(&str, Node), &str>,
@@ -42,7 +53,7 @@ where
 {
     move |input| match lhs_matcher(input) {
         Ok((rest, lhs_result)) => {
-            let next = move |next_matcher: Box<Fn(&str) -> Result<(&str, Node), &str>>| {
+            let next = move |next_matcher: Box<dyn Fn(&str) -> Result<(&str, Node), &str>>| {
                 match next_matcher(rest) {
                     Ok((rest, rhs_result)) => {
                         Ok((rest, Node::Pair(Box::new((lhs_result, rhs_result)))))
@@ -57,6 +68,24 @@ where
             _ => Err(input),
         },
     }
+}
+
+#[test]
+fn test_and_then() {
+    let parser = and_then(left_paren(), and_then(identifier(), whitespace()));
+    assert_eq!(
+        Ok((
+            "",
+            Node::Pair(Box::new((
+                Node::LeftParen,
+                Node::Pair(Box::new((
+                    Node::FunctionName(String::from("hello")),
+                    Node::Whitespace,
+                ))),
+            )))
+        )),
+        parser("(hello ")
+    );
 }
 
 fn whitespace_delimited<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
@@ -136,97 +165,6 @@ fn is_operator(value: char) -> bool {
     value == '+' || value == '-' || value == '*' || value == '/'
 }
 
-fn is_symbol(value: char) -> bool {
-    value == ')' || value == '('
-}
-
-#[test]
-fn test_parse_integer() {
-    let parse_integer = match_some_chars(char::is_numeric, new_integer);
-    assert_eq!(Ok(("", Node::Integer(1))), parse_integer("1"));
-    assert_eq!(Ok(("", Node::Integer(2))), parse_integer("2"));
-    assert_eq!(Ok(("", Node::Integer(123))), parse_integer("123"));
-    assert_eq!(Err("apple"), parse_integer("apple"));
-}
-
-#[test]
-fn test_parse_identifier() {
-    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
-    assert_eq!(
-        Ok(("", Node::FunctionName(String::from("apple")))),
-        parse_identifier("apple")
-    );
-    assert_eq!(Err("+cool"), parse_identifier("+cool"));
-    assert_eq!(Err("123"), parse_identifier("123"));
-}
-
-#[test]
-fn test_parse_operator() {
-    let parse_operator = match_single_char(is_operator, new_operator);
-    assert_eq!(
-        Ok(("", Node::FunctionName(String::from("+")))),
-        parse_operator("+")
-    );
-    assert_eq!(
-        Ok(("", Node::FunctionName(String::from("-")))),
-        parse_operator("-")
-    );
-    assert_eq!(
-        Ok(("cool", Node::FunctionName(String::from("+")))),
-        parse_operator("+cool")
-    );
-}
-
-#[test]
-fn test_parse_function_name() {
-    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
-    let parse_operator = match_single_char(is_operator, new_operator);
-    let parse_either = or(parse_identifier, parse_operator);
-    assert_eq!(
-        Ok(("", Node::FunctionName(String::from("hello")))),
-        parse_either("hello")
-    );
-    assert_eq!(
-        Ok(("", Node::FunctionName(String::from("+")))),
-        parse_either("+")
-    );
-}
-
-#[test]
-fn test_left_paren_then_identifier_then_whitespace() {
-    let parse_left_paren = match_single_char(|c| c == '(', |_| Node::LeftParen);
-    let parse_ident = match_some_chars(char::is_alphabetic, new_identifier);
-    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
-    let parse_all = and_then(parse_left_paren, and_then(parse_ident, parse_whitespace));
-    assert_eq!(
-        Ok((
-            "",
-            Node::Pair(Box::new((
-                Node::LeftParen,
-                Node::Pair(Box::new((
-                    Node::FunctionName(String::from("hello")),
-                    Node::Whitespace,
-                ))),
-            )))
-        )),
-        parse_all("(hello ")
-    );
-}
-
-#[test]
-fn test_parse_whitespace() {
-    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
-    assert_eq!(Ok(("", Node::Whitespace)), parse_whitespace(" "));
-}
-
-#[test]
-fn test_parse_parens() {
-    let parse_left_paren = match_single_char(|c| c == '(', |_| Node::LeftParen);
-    let parse_right_paren = match_single_char(|c| c == ')', |_| Node::RightParen);
-    assert_eq!(Ok(("", Node::LeftParen)), parse_left_paren("("));
-    assert_eq!(Ok(("", Node::RightParen)), parse_right_paren(")"));
-}
-
 fn left_paren() -> impl Fn(&str) -> Result<(&str, Node), &str> {
     match_single_char(|c| c == '(', |_| Node::LeftParen)
 }
@@ -235,18 +173,77 @@ fn right_paren() -> impl Fn(&str) -> Result<(&str, Node), &str> {
     match_single_char(|c| c == ')', |_| Node::RightParen)
 }
 
+#[test]
+fn test_parse_parens() {
+    assert_eq!(Ok(("", Node::LeftParen)), left_paren()("("));
+    assert_eq!(Ok(("", Node::RightParen)), right_paren()(")"));
+}
+
 fn whitespace() -> impl Fn(&str) -> Result<(&str, Node), &str> {
     match_some_chars(char::is_whitespace, new_whitespace)
+}
+
+#[test]
+fn test_whitespace() {
+    let parser = whitespace();
+    assert_eq!(Ok(("", Node::Whitespace)), parser(" "));
 }
 
 fn integer() -> impl Fn(&str) -> Result<(&str, Node), &str> {
     match_some_chars(char::is_numeric, new_integer)
 }
 
+#[test]
+fn test_integer() {
+    let parser = integer();
+    assert_eq!(Ok(("", Node::Integer(1))), parser("1"));
+    assert_eq!(Ok(("", Node::Integer(2))), parser("2"));
+    assert_eq!(Ok(("", Node::Integer(123))), parser("123"));
+    assert_eq!(Err("apple"), parser("apple"));
+}
+
+fn identifier() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_some_chars(char::is_alphabetic, new_identifier)
+}
+
+#[test]
+fn test_identifier() {
+    let parser = identifier();
+    assert_eq!(
+        Ok(("", Node::FunctionName(String::from("apple")))),
+        parser("apple")
+    );
+    assert_eq!(Err("+cool"), parser("+cool"));
+    assert_eq!(Err("123"), parser("123"));
+}
+
+fn operator() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_single_char(is_operator, new_operator)
+}
+
+#[test]
+fn test_operator() {
+    let parser = operator();
+    assert_eq!(Ok(("", Node::FunctionName(String::from("+")))), parser("+"));
+    assert_eq!(Ok(("", Node::FunctionName(String::from("-")))), parser("-"));
+    assert_eq!(
+        Ok(("cool", Node::FunctionName(String::from("+")))),
+        parser("+cool")
+    );
+}
+
 fn function_name() -> impl Fn(&str) -> Result<(&str, Node), &str> {
-    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
-    let parse_operator = match_single_char(is_operator, new_operator);
-    or(parse_identifier, parse_operator)
+    or(identifier(), operator())
+}
+
+#[test]
+fn test_function_name() {
+    let parser = function_name();
+    assert_eq!(
+        Ok(("", Node::FunctionName(String::from("hello")))),
+        parser("hello")
+    );
+    assert_eq!(Ok(("", Node::FunctionName(String::from("+")))), parser("+"));
 }
 
 fn maybe<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
