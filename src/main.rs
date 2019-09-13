@@ -38,19 +38,16 @@ enum OrResult<LT, RT, E> {
     Err(E),
 }
 
-fn or<LT, RT, L, R>(
-    lhs_matcher: L,
-    rhs_matcher: R,
-) -> impl Fn(&str) -> OrResult<(&str, LT), (&str, RT), &str>
+fn or<L, R>(lhs_matcher: L, rhs_matcher: R) -> impl Fn(&str) -> Result<(&str, Expression), &str>
 where
-    L: Fn(&str) -> Result<(&str, LT), &str>,
-    R: Fn(&str) -> Result<(&str, RT), &str>,
+    L: Fn(&str) -> Result<(&str, Expression), &str>,
+    R: Fn(&str) -> Result<(&str, Expression), &str>,
 {
     move |input| match lhs_matcher(input) {
-        Ok((rest, node)) => OrResult::LHS((rest, node)),
+        Ok((rest, node)) => Ok((rest, node)),
         _ => match rhs_matcher(input) {
-            Ok((rest, node)) => OrResult::RHS((rest, node)),
-            _ => OrResult::Err(input),
+            Ok((rest, node)) => Ok((rest, node)),
+            _ => Err(input),
         },
     }
 }
@@ -191,11 +188,11 @@ fn test_parse_function_name() {
     let parse_operator = match_single_char(is_operator, new_operator);
     let parse_either = or(parse_identifier, parse_operator);
     assert_eq!(
-        OrResult::LHS(("", Expression::FunctionName(String::from("hello")))),
+        Ok(("", Expression::FunctionName(String::from("hello")))),
         parse_either("hello")
     );
     assert_eq!(
-        OrResult::RHS(("", Expression::FunctionName(String::from("+")))),
+        Ok(("", Expression::FunctionName(String::from("+")))),
         parse_either("+")
     );
 }
