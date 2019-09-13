@@ -385,3 +385,24 @@ fn test_three_arg_function_call() {
         parser("(add 1 2 3)")
     )
 }
+
+#[test]
+fn test_nested_function_call() {
+    let parser = function_call();
+    assert_eq!(
+        Ok((
+            "",
+            Node::FunctionCall(Box::new((
+                Node::FunctionName("add".to_string()),
+                vec![
+                    Node::FunctionCall(Box::new((
+                        Node::FunctionName("add".to_string()),
+                        vec![Node::Integer(1), Node::Integer(2)]
+                    ))),
+                    Node::Integer(3)
+                ]
+            )))
+        )),
+        parser("(add (add 1 2) 3)")
+    )
+}
