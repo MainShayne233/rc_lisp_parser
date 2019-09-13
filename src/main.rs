@@ -1,3 +1,4 @@
+#![feature(box_syntax, box_patterns)]
 //////////////////////////////////////////////////////////////////////////////////////////////////
 // Lisp parser                                                                                  //
 //                                                                                              //
@@ -12,9 +13,10 @@ enum Node {
     LeftParen,
     RightParen,
     Whitespace,
+    Nothing,
     Integer(i64),
     FunctionName(String),
-    //    FunctionCall(Box<(Node, Vec<Node>)>),
+    FunctionCall(Box<(Node, Vec<Node>)>),
     Pair(Box<(Node, Node)>),
     List(Box<Vec<Node>>),
 }
@@ -48,10 +50,7 @@ where
     }
 }
 
-fn and_then<L, R>(
-    lhs_matcher: L,
-    rhs_matcher: R,
-) -> impl Fn(&str) -> Result<(&str, Node), &str>
+fn and_then<L, R>(lhs_matcher: L, rhs_matcher: R) -> impl Fn(&str) -> Result<(&str, Node), &str>
 where
     L: Fn(&str) -> Result<(&str, Node), &str>,
     R: Fn(&str) -> Result<(&str, Node), &str>,
@@ -75,15 +74,18 @@ where
     }
 }
 
-fn zero_to_many<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
+
+fn whitespace_delimited<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
 where
     L: Fn(&str) -> Result<(&str, Node), &str>,
 {
     move |input| {
         let mut matches: Vec<Node> = vec![];
         let mut current = input;
-        while let Ok((rest, result)) = matcher(current) {
-            matches.push(result);
+        while let Ok((rest, result)) = or(|input| matcher(input), whitespace())(current) {
+            if result != Node::Whitespace {
+                matches.push(result);
+            }
             current = rest;
         }
         Ok((current, Node::List(Box::new(matches))))
@@ -192,7 +194,6 @@ fn test_parse_operator() {
 }
 
 #[test]
-#[test]
 fn test_parse_function_name() {
     let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
     let parse_operator = match_single_char(is_operator, new_operator);
@@ -242,47 +243,145 @@ fn test_parse_parens() {
     assert_eq!(Ok(("", Node::RightParen)), parse_right_paren(")"));
 }
 
-
-
-#[test]
-fn test_parse_whitespace_delimited_integers() {
-    let parse_integer = match_some_chars(char::is_numeric, new_integer);
-    let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
-    let parse_either = or(parse_integer, parse_whitespace);
-    let parse_integers = zero_to_many(parse_either);
-    assert_eq!(
-        parse_integers("1 2 3"),
-        Ok((
-            "",
-            Node::List(Box::new(vec![
-                Node::Integer(1),
-                Node::Whitespace,
-                Node::Integer(2),
-                Node::Whitespace,
-                Node::Integer(3),
-            ]))
-        ))
-    );
+fn left_paren() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_single_char(|c| c == '(', |_| Node::LeftParen)
 }
 
-// #[test]
-// fn test_parse_function_call() {
-//     let parse_function_call = and_then(left_paren, function_name, function_args, right_paren);
-//     let parse_integer = match_some_chars(char::is_numeric, new_integer);
-//     let parse_whitespace = match_some_chars(char::is_whitespace, new_whitespace);
-//     let parse_either = or(parse_integer, parse_whitespace);
-//     let parse_integers = zero_to_many(parse_either);
-//     assert_eq!(
-//         parse_integers("1 2 3"),
-//         Ok((
-//             "",
-//             Node::List(Box::new(vec![
-//                 Node::Integer(1),
-//                 Node::Whitespace,
-//                 Node::Integer(2),
-//                 Node::Whitespace,
-//                 Node::Integer(3),
-//             ]))
-//         ))
-//     );
-// }
+fn right_paren() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_single_char(|c| c == ')', |_| Node::RightParen)
+}
+
+fn whitespace() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_some_chars(char::is_whitespace, new_whitespace)
+}
+
+fn integer() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    match_some_chars(char::is_numeric, new_integer)
+}
+
+fn function_name() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    let parse_identifier = match_some_chars(char::is_alphabetic, new_identifier);
+    let parse_operator = match_single_char(is_operator, new_operator);
+    or(parse_identifier, parse_operator)
+}
+
+fn maybe<L>(matcher: L) -> impl Fn(&str) -> Result<(&str, Node), &str>
+where
+    L: Fn(&str) -> Result<(&str, Node), &str>,
+{
+    move |input| match matcher(input) {
+        Ok((rest, result)) => Ok((rest, result)),
+        Err(_) => Ok((input, Node::Nothing)),
+    }
+}
+
+fn expression() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    integer()
+}
+
+fn function_arguments() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+     move |input| match whitespace_delimited(expression())(input) {
+        Ok((rest, Node::List(box mut args))) => match expression()(rest) {
+            Ok((rest, trailing_arg)) => {
+                args.push(trailing_arg);
+                Ok((rest, Node::List(Box::new(args))))
+            }
+            _ => Ok((rest, Node::List(Box::new(args)))),
+        },
+        _ => Err(input),
+    }
+}
+
+fn function_call() -> impl Fn(&str) -> Result<(&str, Node), &str> {
+    let parser = and_then(
+        left_paren(),
+        and_then(
+            maybe(whitespace()),
+            and_then(
+                function_name(),
+                or(
+                    right_paren(),
+                    and_then(
+                        whitespace(),
+                        and_then(
+                            function_arguments(),
+                            and_then(maybe(whitespace()), right_paren()),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    );
+    move |input| match parser(input) {
+        Ok((
+            rest,
+            Node::Pair(box (
+                Node::LeftParen,
+                Node::Pair(box (_, Node::Pair(box (function_name, Node::RightParen)))),
+            )),
+        )) => Ok((rest, Node::FunctionCall(Box::new((function_name, vec![]))))),
+        Ok((
+            rest,
+            Node::Pair(box (
+                Node::LeftParen,
+                Node::Pair(box (
+                    _,
+                    Node::Pair(box (
+                        function_name,
+                        Node::Pair(box (
+                            _,
+                            Node::Pair(box (
+                                Node::List(box args),
+                                Node::Pair(box (_, Node::RightParen)),
+                            )),
+                        )),
+                    )),
+                )),
+            )),
+        )) => Ok((rest, Node::FunctionCall(Box::new((function_name, args))))),
+        Err(_) => Err(input),
+        other => other,
+    }
+}
+
+#[test]
+fn test_zero_arity_function_call() {
+    let parser = function_call();
+    assert_eq!(
+        Ok((
+            "",
+            Node::FunctionCall(Box::new((Node::FunctionName("hello".to_string()), vec![])))
+        )),
+        parser("(hello)")
+    )
+}
+
+#[test]
+fn test_single_arg_function_call() {
+    let parser = function_call();
+    assert_eq!(
+        Ok((
+            "",
+            Node::FunctionCall(Box::new((
+                Node::FunctionName("print".to_string()),
+                vec![Node::Integer(1)]
+            )))
+        )),
+        parser("(print 1)")
+    )
+}
+
+#[test]
+fn test_three_arg_function_call() {
+    let parser = function_call();
+    assert_eq!(
+        Ok((
+            "",
+            Node::FunctionCall(Box::new((
+                Node::FunctionName("add".to_string()),
+                vec![Node::Integer(1), Node::Integer(2), Node::Integer(3)]
+            )))
+        )),
+        parser("(add 1 2 3)")
+    )
+}
